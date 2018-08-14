@@ -1,0 +1,71 @@
+{
+    "gpu_mode": "T",
+    "gpu_index": 1,
+
+    "batch_size": 32,
+    "label": "majority",
+
+    "hidden_size": 100,
+    "embed_size": 100,
+
+    "experiment": "class",
+    "train_ratio": 0.8,
+    "keep_story": "T",
+    "task": "motivation",
+    "granularity": "reiss",
+
+    "encoder": {
+        "ctx": "T",
+        "model": "npn",
+        "dropout": 0,
+        "pt": "glove",
+        "init": "def",
+        "rnn": {
+            "num_layers": 2,
+            "bid": "T"
+        },
+        "ren": {
+            "init": "gauss+0+0.1",
+            "type": "icmul+bow",
+            "application_function": "kvc",
+            "activation": "P1",
+            "entity_size": 100,
+            "num_slots": 20,
+            "tied": "T",
+            "supervise": "F",
+            "lock_keys": "T",
+            "entpt": "glove"
+        },
+        "npn": {
+            "actions": 50,
+            "action_size": 30,
+            "action_num_layers": 1,
+            "action_dropout": 0,
+            "action_activation": "tanh",
+            "action_init": "n",
+            "entity_num_layers": 0,
+            "entity_dropout": 0,
+            "entity_recurrent_attention": "F",
+            "entity_reduce": "F",
+            "num_enc": "2"
+        },
+        "cnn": {
+            "kernel_sizes": "3,4,5",
+            "kernel_num": 100
+        }
+    },
+    "classification_decoder": {
+        "dropout": 0.3
+    },
+
+    "learning_rate": 0.001,
+    "optimizer": "adam",
+    "random_seed": 123,
+    "grad_clip": 1,
+
+    "epochs": 20,
+    "mark": 1000,
+    "iterations": 100000,
+    "toy": "F",
+    "save": "T"
+}
