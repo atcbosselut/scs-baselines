@@ -24,7 +24,7 @@ These dependencies must also be installed. Apart from Jobman, they should be ava
 
 ### Installing Jobman
 
-Instructions Jobman are a bit unclear, so just run the following commands from your home directory:
+Instructions for installing Jobman are a bit convoluted, so just run the following commands from your home directory and you should be fine:
 
 ```
 git clone git://git.assembla.com/jobman.git Jobman
