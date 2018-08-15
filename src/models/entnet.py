@@ -17,10 +17,8 @@ class EntNet(nn.Module):
     Initialization Args:
         max_words: maximum number of words in input sentences
                    (useful for positional mask in EntNet paper)
-        q_max_words: maximum number of words in questions
-                    (useful for positional mask in EntNet paper)
         opt: options for all model components
-        opt.ent: number of entities to initialize
+        opt.ents: number of entities to initialize
         opt.eSize: size of entity embeddings to initialize
 
     Input:
@@ -34,16 +32,9 @@ class EntNet(nn.Module):
                    of updating entities. Recurrent Attention in paper
 
     Output:
-        If sentence:
-            new entity values
-            no loss
-            no attentive distribution for answering question
-            selection distribution over entities for update
-        If question:
-            same entity values
-            loss
-            attentive distribtuion over entities to answer question
-            no selection distribution for updating entities
+        new entity values
+        attention over new entities
+        loss with respect to entity selection if it is supervised
     """
     def __init__(self, opt, max_words=None):
         super(EntNet, self).__init__()
@@ -93,7 +84,7 @@ class EntNet(nn.Module):
 
             # Select entities
             _, attn_dist, attn_acts = self.entity_selector(
-                sent_emb, entities, self.keys, None)
+                sent_emb, entities, self.keys)
 
             if entity_labels is not None:  # and entity_labels[i].sum() != 0:
                 sel_loss += self.crit(attn_acts, Variable(entity_labels[i]))
@@ -140,10 +131,6 @@ class EntNetEntityUpdater(nn.Module):
 
     Initialization Args:
         opt.eSize: size of entities
-        opt.afunc: function to use for entity update
-                    k = include projected keys (from EntNet paper)
-                    v = include projected values (from EntNet paper)
-                    c = include projected context (from EntNet paper)
 
     Input:
         entities: entity vals at start of EntNet cycle
@@ -250,6 +237,20 @@ class EntNetEntityUpdater(nn.Module):
 
 
 class EntNetEntitySelector(nn.Module):
+    """
+    Select entities using hidden state from encoder
+
+    Input:
+        hidden: hidden state from encoder
+        entities: entity vals at start of EntNet cycle
+                  (batch_size x num_entities x entity_size)
+        keys: key vector for entities
+
+    Output:
+        selected_entities: selected entity vectors from attention distribution
+        dist: attention distribution over entities
+        act: activations of attention distribution
+    """
     def __init__(self, opt):
         super(EntNetEntitySelector, self).__init__()
 
@@ -261,7 +262,7 @@ class EntNetEntitySelector(nn.Module):
 
         self.opt = opt
 
-    def forward(self, hidden, entities, keys, prev_attn):
+    def forward(self, hidden, entities, keys):
         # Compute attention weights over entities
         dist, act = self.attention(keys, entities, hidden)
 
@@ -278,6 +279,19 @@ class EntNetEntitySelector(nn.Module):
 
 
 class EntNetSentenceEncoder(nn.Module):
+    """
+    Encode sentence using a weighted bag of words where the
+    word embeddings are weighted by a positional mask
+
+    Input:
+        input: word indices based on vocabulary
+        lengths: length of each set of words in the batchs
+        embed: word embeddings in case we use shared embeddings
+                with another module
+
+    Output:
+        output: hidden state from encoding the words
+    """
     def __init__(self, opt, max_words=None):
         super(EntNetSentenceEncoder, self).__init__()
         self.opt = opt

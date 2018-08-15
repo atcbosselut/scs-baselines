@@ -12,10 +12,12 @@ import src.data.config as cfg
 import utils.utils as utils
 
 
+# Save the model
 def save_checkpoint(state, filename):
     torch.save(state, filename)
 
 
+# Name the checkpoint and save the model
 def save_step(model, optimizer, opt, length):
     name = "{}.pickle".format(utils.make_name(
         opt, prefix="models/", is_dir=False))
@@ -26,6 +28,7 @@ def save_step(model, optimizer, opt, length):
     print "Saving to: {}".format(name)
 
 
+# Name the training loss and save them
 def save_train_losses(opt, iter_loss, ln="losses"):
     name = "{}/train.pickle".format(utils.make_name(
         opt, prefix="results/{}/".format(ln), is_dir=True))
@@ -34,6 +37,7 @@ def save_train_losses(opt, iter_loss, ln="losses"):
         pickle.dump(iter_loss, f)
 
 
+# Name evaluation losses and save them
 def save_eval_losses(opt, eval_losses, split="dev", ln="losses"):
     if eval_losses:
         name = "{}/{}.pickle".format(utils.make_name(
@@ -43,6 +47,7 @@ def save_eval_losses(opt, eval_losses, split="dev", ln="losses"):
             pickle.dump(eval_losses, f)
 
 
+# Load a model checkpoint
 def load_checkpoint(filename, gpu=True):
     if os.path.exists(filename):
         checkpoint = torch.load(
@@ -53,19 +58,7 @@ def load_checkpoint(filename, gpu=True):
     return checkpoint
 
 
-def dt_gen_lit_eval(s):
-    if isinstance(s, str):
-        if ('["' in s or "['" in s) and ('"]' in s or "']" in s):
-            new_s = ast.literal_eval(s)
-        else:
-            new_s = s
-        if isinstance(new_s, str):
-            return [nltk.casual_tokenize(s.lower())]
-        else:
-            return [nltk.casual_tokenize(i.lower()) for i in new_s]
-    return []
-
-
+# Translate pandas dataframe cells
 def lit_eval(s):
     if s:
         return nltk.casual_tokenize(s.lower())
@@ -73,6 +66,7 @@ def lit_eval(s):
         return []
 
 
+# Translate pandas dataframe cells for context
 def ctx_lit_eval(s):
     if isinstance(s, str):
         sents = s.split("|")
@@ -80,6 +74,7 @@ def ctx_lit_eval(s):
     return []
 
 
+# Create a new vocabulary from the a vocabulary file
 class Vocab(object):
     def __init__(self, link=None):
         self._tokens = []
@@ -96,10 +91,13 @@ class Vocab(object):
             with open(link, "r") as f:
                 temp = f.read().split("\n")
 
+        # If we're including meta tokens {pad, unk}
         if meta:
             self._tokens = {i + 1: j for i, j in enumerate(temp)}
             self._tokens[0] = "<pad>"
             self._tokens[len(self._tokens)] = "<unk>"
+
+            # If this requires start and end tokens
             if text:
                 self._tokens[len(self._tokens)] = "<start>"
                 self._tokens[len(self._tokens)] = "<end>"
@@ -132,6 +130,7 @@ class DataLoader(object):
 
         self.batch_size = batch_size
 
+        # File names we'll load to create the data
         self.fnames = {
             "train": ["data/training/allcharlinepairs.csv",
                       "data/training/allcharlinepairs_part2.csv"],
@@ -644,6 +643,8 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
         self.is_ren = True
 
     def do_context(self, ctx_, char_lines, line_num):
+        # Place context lines for a story sentence in a dictionary
+        # where each key is the order of the sentence
         ctx = {}
         for line in range(len(ctx_)):
             if line < line_num:
@@ -679,13 +680,17 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
         char = row["char"]
         line_num = row["linenum"]
 
+        # Extract sentences and context
         raw_sent = lit_eval(row["sentence"])
         ctx_ = ctx_lit_eval(row["context"])
 
+        # Find the lines in the story in which this character appears
         char_lines = ents[(story, char)]
 
+        # Get previous sentences to make context data structure
         ctx = self.do_context(ctx_, char_lines, line_num)
 
+        # Get entities
         eids, elabels = self.do_entities(ent_ments, num_ents)
 
         # Get context and sentence
@@ -697,26 +702,26 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
         else:
             id_ = (story, char, line_num, row[id_idx])
 
+        # Get sentence lengths
         sl = len(sent)
         sent_diff = self.sent_maxes[split] - sl
         sent += [0] * sent_diff
 
-        # print self.ctx_maxes[split]
-
+        # Get context lengths
         clengths = {}
         for i in ctx:
             clengths[i] = len(ctx[i])
             ctx_diff = self.ctx_maxes[split][i - 1] - clengths[i]
             ctx[i] += [0] * ctx_diff
 
-        # print clengths
-        # print ctx
-
-        # print ctx
+        # Get labels for this point
         labels, raw_labels = self.make_label_point(row, same_row)
 
+        # Make the key for the group this data point belongs to
         key = (line_num, len(num_ents))
 
+        # Add the example to all the corresponding data stores
+        # for each part of the data point (sentence, labels, context, etc.)
         if key not in self.sent[split]:
             self.sent[split][key] = \
                 torch.LongTensor(sent).unsqueeze(0)
@@ -777,6 +782,7 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
         self.raw_labels[split][id_] = raw_labels
         self.size[split][key] = self.size[split].get(key, 0) + 1
 
+    # Sample a batch from the data_loader
     def sample_batches(self, split, keys=None, bs=None):
         # If specific key isn't specified, sample a key
         if not keys:
@@ -791,6 +797,7 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
         start_idx = offset[keys]
         final_idx = offset[keys] + bs
 
+        # Cache the correct data stores
         num_sentences = self.sent[split][keys].size(0)
         labels = self.labels[split][keys]
         sentence = self.sent[split][keys]
@@ -822,6 +829,7 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
 
         s = sorted(context.keys())
 
+        # Select the correct examples using the sampled indices
         ss = sentence.index_select(0, idxs)
         sl = sentence_lengths.index_select(0, idxs)
         cs = {cn: context[cn].index_select(0, idxs) for cn in s}
@@ -835,6 +843,7 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
 
         return lab, ss, sl, cs, cl, e, ei, el, idss, keys
 
+    # Push the data to the GPU
     def cuda(self, device_id=None):
         self.is_cuda = True
         if device_id is None:
@@ -861,6 +870,7 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
                 self.labels[split][key] = \
                     self.labels[split][key].cuda(device_id)
 
+    # Shuffle all the data
     def shuffle_sequences(self, split, keys):
         orders = {}
         for key in keys:
@@ -925,10 +935,9 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
         self.offset[keep] = {i: 0 for i in self.labels[keep]}
         self.unfilled[keep] = set(self.offset[keep].keys())
 
+    # Depending on the key, pop it or add it to the set of examples
+    # in this split
     def update_sets(self, vals, write, keep, key):
-        # print vals
-        # print write
-        # print keep
         if not vals:
             if key in self.labels[write]:
                 self.labels[write].pop(key)
@@ -960,7 +969,6 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
                 self.ctx_lengths[write][key] = {}
                 self.ent_labels[write][key] = {}
 
-            # self.ent_labels[write].setdefault(0, {})
             for i in range(1, key[0]):
                 self.ctx[write][key][i] = \
                     self.ctx[keep][key][i].index_select(0, idxs)

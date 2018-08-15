@@ -11,6 +11,10 @@ import pickle
 
 
 class PretrainedEmbeddingsModel(nn.Module):
+    """
+    Base class that allows pretrained embedding to be loaded from
+    a vocabulary. Assumes the wrapper class will initialize the embeddings
+    """
     def load_embeddings(self, vocab):
         if self.opt.pt != "none":
             # Get glove vector file name
@@ -240,6 +244,9 @@ class Attender(nn.Module):
                 batch_size x seq_len x hidden_state
                 These are the hidden states to compare to
         weights: attention distribuution
+        do_reduce: indicator variable indicating whether we compute
+                   the weighted average of the attended vectors OR
+                   just return them scaled by their attention weight
 
     Output:
         attention distribution over hidden states
@@ -261,6 +268,19 @@ class Attender(nn.Module):
 
 
 class PaddedEncoder(PretrainedEmbeddingsModel):
+    """
+    Encode a sentence using a recurrent neural network
+
+    Input:
+        input: 2-dimensional tensor of size
+                batch_size x max_seq_len
+        length_tensor: lengths of the sequences in the batch
+
+    Output:
+        state -- final hidden state of each sequence
+        outs -- outputs of encoder at each step
+
+    """
     def __init__(self, opt):
         super(PaddedEncoder, self).__init__()
         self.embeddings = nn.Embedding(opt.vSize, opt.hSize, padding_idx=0)
@@ -291,9 +311,14 @@ class Decoder(PretrainedEmbeddingsModel):
         self.embeddings = nn.Embedding(opt.vSize, opt.hSize)
         self.output_temperature = opt.dt
 
+        # If we concatenate context to input, increase hidden state
+        # if recurrent unit to accommodate larger input to it
         if self.opt.ctx == "inp":
             mult *= 2
             self.output_proj = nn.Linear(mult * opt.hSize, opt.vSize)
+
+        # If we concatenate context vector to output of recurrent unit,
+        # increase the size of the hidden state projection to vocabulary space
         elif self.opt.ctx == "out":
             self.output_proj = nn.Linear(2 * mult * opt.hSize, opt.vSize)
 

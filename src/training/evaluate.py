@@ -85,6 +85,7 @@ def eval_gen(opt, model, data_loader, gpu=True, split="dev"):
 
     print "Dev evaluation completed in: {} s".format(time.time() - start)
 
+    # Get normalizers for each loss
     divs = {
         "token_{}".format(opt.task): num["neg"] + num["pos"],
         "token_{}_neg".format(opt.task, pn): num["neg"],
@@ -175,22 +176,32 @@ def encode_input(opt, bs, encoder, e_encoder, _sent,
                  _sl, _ctx, _cl, e, ei, el, key):
     if opt.net.enc.model in ["ren", "npn"]:
         if _ctx:
+            # Make sentence last part of context
+            # for memory models
             sent_idx = max(_ctx.keys()) + 1
             _ctx[sent_idx] = _sent
             _cl[sent_idx] = _sl
+
+            # Encode story up to this points
             entities, e_hidden, sel_loss = encoder(
                 _ctx, _cl, el, Variable(ei))
         else:
+            # Encode sentence
             entities, e_hidden, sel_loss = encoder(
                 {1: _sent}, {1: _sl}, el, Variable(ei))
         if opt.net.enc.tied:
-            # print entities.size()
+            # If using tied entities, select the memory slot for the
+            # entity that we are predicting motivations or emotions for
             e_idx = e.view(-1, 1, 1).expand(
                 bs, 1, entities.size(2))
             hidden = entities.gather(1, Variable(e_idx)).squeeze(1)
         else:
+            # if entities, aren't tied, use the average entity
+            # computed by attending to the entity memoruy using
+            # the entity selection weights for this sentence
             hidden = e_hidden
     else:
+        # Encode sentence
         s_hidden, contexts, sel_loss = encoder(Variable(_sent), _sl)
         if e_encoder:
             # Encode context
@@ -198,7 +209,10 @@ def encode_input(opt, bs, encoder, e_encoder, _sent,
                 e_hidden, e_ctx, _ = e_encoder(
                     Variable(_ctx), _cl)
             else:
+                # If it's the first sentence, make context a zero vector
                 e_hidden = Variable(s_hidden.data.clone().zero_())
+
+            # Concatenate context and sentence vectors
             hidden = torch.cat([s_hidden, e_hidden], 1)
         else:
             hidden = s_hidden
@@ -239,27 +253,41 @@ def compute_scores(vocab, scores, counts, _labels, predicted):
     bs = _labels.size(0)
     vocab_size = _labels.size(1)
 
+    # Precision is looks at how many positive labels we get right
+    # from the ones we predict
     local_precision = ((_labels == predicted) & predicted.byte()).float()
+
+    # Recall counts the number of positive labels we recover
     local_recall = ((_labels == predicted) & _labels.byte()).float()
+
+    # Accuracy just looks at whether we predict the same as the label
+    # regardless of whether it's negative or positive
     correct = (_labels == predicted)
 
+    # Compute precision, recall, accuracy for each possible label
+    # e.g., for emotions this is the 8 emotions of Plutchik's wheel
     for i, word in vocab.iteritems():
+        # Numerators
         scores["{}_precision".format(word)] += local_precision[:, i].sum()
         scores["{}_recall".format(word)] += local_recall[:, i].sum()
         scores["{}_accuracy".format(word)] += correct[:, i].sum()
 
+        # Normalizers
         counts["{}_precision".format(word)] += predicted[:, i].sum()
         counts["{}_recall".format(word)] += _labels[:, i].sum()
         counts["{}_accuracy".format(word)] += bs
 
     word = "total"
 
+    # Count number of predictions and labels
     prec_norm = predicted.sum(1)
     rec_norm = _labels.sum(1)
 
+    # Add 1 if there are no positive labels or predictions
     prec_cover = (prec_norm == 0).float() + prec_norm
     rec_cover = (rec_norm == 0).float() + rec_norm
 
+    # Compute a microaverage over all the  labels
     scores["{}_precision_micro".format(word)] += \
         (local_precision / prec_cover.unsqueeze(1).repeat(
             1, vocab_size)).sum()
@@ -282,6 +310,7 @@ def compute_scores(vocab, scores, counts, _labels, predicted):
 
 
 def compute_answers(vocab, ids, answers, predicted):
+    # Convert predictions to vocabulary for saving answers
     for id_idx, id_ in enumerate(ids):
         answers[id_] = [vocab[i] for i, j in enumerate(
             predicted[id_idx].tolist()) if j]

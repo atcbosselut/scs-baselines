@@ -16,7 +16,7 @@
 
     "encoder": {
         "ctx": "T",
-        "model": "npn",
+        "model": "cnn",
         "dropout": 0,
         "pt": "glove",
         "init": "def",

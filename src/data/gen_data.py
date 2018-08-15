@@ -12,6 +12,7 @@ import src.data.config as cfg
 import src.data.data as data
 
 
+# Translate pandas dataframe cells
 def gen_lit_eval(s):
     if isinstance(s, str):
         if ('["' in s or "['" in s) and ('"]' in s or "']" in s):

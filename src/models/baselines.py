@@ -12,6 +12,17 @@ import pickle
 
 
 class Model(nn.Module):
+    """
+    Container class for holding an encoder and some type of classifier
+    or decoder
+
+    Initialization Args:
+        opt: options to pass to encoder and classifier/decoder
+        vocab: vocabulary for the encoder
+        ent_vocab: vocabulary of possible entities
+        max_words: maximum number of words in a sentence
+                   (useful for the positional encoder of EntNet)
+    """
     def __init__(self, opt, vocab, ent_vocab=None, max_words=None):
         super(Model, self).__init__()
 
@@ -94,14 +105,32 @@ class Model(nn.Module):
 
 
 class ClassModel(Model):
+    """
+    Container class for holding an encoder and a classifier
+
+    Initialization Args:
+        opt: options to pass to encoder and classifier
+        vocab: vocabulary for the encoder
+        ent_vocab: vocabulary of possible entities
+        max_words: maximum number of words in a sentence
+                   (useful for the positional encoder of EntNet)
+    """
     def __init__(self, opt, vocab, ent_vocab=None,
-                 max_words=None, crit_weights=None):
+                 max_words=None):
         super(ClassModel, self).__init__(
             opt, vocab, ent_vocab, max_words)
 
+        # condition is whether to increase the size of the linear
+        # transformation to the vocabulary space because we're including
+        # entity-specific context information for a neural model such as
+        # CNN or LSTM.
+        # Refer to the paper for more details.
+        condition = (opt.enc.ctx and opt.enc.model not in ["ren", "npn"])
+
+        # Initialize classifier
         self.classifier = StatePredictor(
             opt.classdec, mult=self.mult,
-            do_ents=(opt.enc.ctx and opt.enc.model not in ["ren", "npn"]))
+            ctx=condition)
 
     def forward(self):
         pass
@@ -112,23 +141,36 @@ class ClassModel(Model):
 
 
 class GenModel(Model):
+    """
+    Container class for holding an encoder and a decoder
+
+    Initialization Args:
+        opt: options to pass to encoder and decoder
+        vocab: vocabulary for the encoder
+        ent_vocab: vocabulary of possible entities
+        max_words: maximum number of words in a sentence
+                   (useful for the positional encoder of EntNet)
+    """
     def __init__(self, opt, vocab, ent_vocab=None, max_words=None):
         super(GenModel, self).__init__(opt, vocab, ent_vocab, max_words)
 
+        # condition is whether to increase the size of the linear
+        # transformation to the vocabulary space because we're including
+        # entity-specific context information for a neural model such as
+        # CNN or LSTM.
+        # Refer to the paper for more details.
         condition = (opt.enc.ctx and opt.enc.model not in ["ren", "npn"])
-
         mult = self.mult * (1 + condition)
 
+        # Project final hidden state to decoder hidden size
         self.hproj = nn.Linear(
             mult * opt.gendec.hSize, opt.gendec.hSize)
 
         # Initialize decoder
-        if opt.gendec.model == "aed":
-            print "Attentive Decoder not implemented"
-            raise
-            # self.decoder = models.AttentiveDecoder(opt.gendec, mult=mult)
-        else:
+        if opt.gendec.model == "ed":
             self.decoder = models.Decoder(opt.gendec)
+        else:
+            raise
 
     def cuda(self, device_id):
         super(GenModel, self).cuda(device_id)
@@ -136,6 +178,20 @@ class GenModel(Model):
 
 
 class RecurrentEncoder(nn.Module):
+    """
+    Recurrent neural network encoder
+
+    Initialization Args:
+        opt: options to pass to encoder and decoder
+
+    Inputs:
+        input: batched sequence of word indices
+        lengths: length of non-pad indices in word sequences
+
+    Outputs:
+        output: output vectors from encoding words
+        hidden: final layer hidden state
+    """
     def __init__(self, opt):
         super(RecurrentEncoder, self).__init__()
         self.sentence_encoder = models.PaddedEncoder(opt)
@@ -154,102 +210,73 @@ class RecurrentEncoder(nn.Module):
 
 
 # Adapted from https://github.com/Shawn1993/cnn-text-classification-pytorch
-class CNNEncoder(nn.Module):
+class CNNEncoder(models.PretrainedEmbeddingsModel):
+    """
+    Recurrent neural network encoder
+
+    Initialization Args:
+        opt: options to pass to encoder and decoder
+        opt.kn: number of kernels for each size
+        opt.ks: kernel sizes
+
+    Inputs:
+        x: batched sequence of word indices
+        lengths: We don't need lengths here, so this is just for
+                 encoder parity
+
+    Outputs:
+        output: output vectors from encoding words
+        hidden: final layer hidden state
+    """
     def __init__(self, opt):
         super(CNNEncoder, self).__init__()
         self.opt = opt
         self.is_cuda = False
 
-        # V = args.embed_num #
-        # D = args.embed_dim #
-        # C = opt.class_num #
         Ci = 1
         Co = opt.kn
         Ks = opt.ks
         print opt.iSize
-        self.embs = nn.Embedding(opt.vSize, opt.iSize)
-        # self.convs1 = [nn.Conv2d(Ci, Co, (K, D)) for K in Ks] #
+        self.embeddings = nn.Embedding(opt.vSize, opt.iSize)
         self.convs1 = nn.ModuleList([nn.Conv2d(Ci, Co, (int(K), opt.iSize))
                                      for K in Ks.split(",")])
-        '''
-        self.conv13 = nn.Conv2d(Ci, Co, (3, D))
-        self.conv14 = nn.Conv2d(Ci, Co, (4, D))
-        self.conv15 = nn.Conv2d(Ci, Co, (5, D))
-        '''
+
         self.dropout = nn.Dropout(opt.dpt)
-        # self.fc1 = nn.Linear(len(Ks)*Co, C) #
 
-    # def conv_and_pool(self, x, conv):
-    #     x = F.relu(conv(x)).squeeze(3)  # (N, Co, W)
-    #     x = F.max_pool1d(x, x.size(2)).squeeze(2)
-    #     return x
-
-    def forward(self, x, lengths):
-        x = self.embs(x)  # (N, W, D)
+    def forward(self, x, lengths=None):
+        x = self.embeddings(x)  # (N, W, D)
         x = self.dropout(x)
-        # if self.args.static:
-        #     x = Variable(x)
 
-        x = x.unsqueeze(1)  # (N, Ci, W, D)
+        x = x.unsqueeze(1)
 
-        # [(N, Co, W), ...]*len(Ks)
-        # [(N, Co), ...]*len(Ks)
         x = [F.relu(conv(x)).squeeze(3) for conv in self.convs1]
 
         x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
 
         x = torch.cat(x, 1)
 
-        '''
-        x1 = self.conv_and_pool(x,self.conv13) #(N,Co)
-        x2 = self.conv_and_pool(x,self.conv14) #(N,Co)
-        x3 = self.conv_and_pool(x,self.conv15) #(N,Co)
-        x = torch.cat((x1, x2, x3), 1) # (N,len(Ks)*Co)
-        '''
-        # x = self.dropout(x)  # (N, len(Ks)*Co)
-        # logit = self.fc1(x)  # (N, C)
         return x, None, None
-
-    def load_embeddings(self, vocab):
-        if self.opt.pt != "none":
-            name = cfg.get_glove_name(self.opt, "tokens")
-            print "Loading embeddings from {}".format(name)
-            with open(name, "r") as f:
-                token_words = pickle.load(f)
-            # print vocab
-            for i, word in vocab.iteritems():
-                if word in ["<unk>", "<start>", "<end>", "<pad>"]:
-                    self.embs.weight.data[i].zero_()
-                    continue
-                if self.is_cuda:
-                    vec = torch.cuda.FloatTensor(token_words[word])
-                else:
-                    vec = torch.FloatTensor(token_words[word])
-                self.embs.weight.data[i] = vec
 
     def cuda(self, device_id):
         super(CNNEncoder, self).cuda(device_id)
-        self.embs.cuda(device_id)
+        self.embeddings.cuda(device_id)
         self.convs1.cuda(device_id)
         self.is_cuda = True
 
 
 class StatePredictor(nn.Module):
-    def __init__(self, opt, mult=1, do_ents=False):
+    def __init__(self, opt, mult=1, ctx=False):
         super(StatePredictor, self).__init__()
 
         self.dropout = nn.Dropout(opt.dpt)
-        self.proj = nn.Linear(mult * (1 + do_ents) * opt.hSize, opt.vSize)
+        self.proj = nn.Linear(mult * (1 + ctx) * opt.hSize, opt.vSize)
         self.prob = nn.Sigmoid()
 
     def forward(self, input, labels, weights):
-        # print(input.size())
-        # print(self.proj)
         act = self.proj(self.dropout(input))
 
         loss = F.binary_cross_entropy_with_logits(
             act, labels, weight=weights)
-        # loss = self.loss_fn(act, labels)
 
         prob = self.prob(Variable(act.data, volatile=True))
         return act, loss, prob
