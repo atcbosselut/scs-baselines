@@ -148,17 +148,26 @@ class NeuralGenModelDataLoader(data.DataLoader):
             else:
                 df_names = [self.fnames["{}_{}".format(split, type_)]]
 
+            print("Reading from Data Files")
+
+            print("Reading entity identities from {}".format(
+                self.fnames[split + "_entity" + suffix]))
             ents = pickle.load(open(
                 self.fnames[split + "_entity" + suffix], "r"))
+
+            print("Reading entity frequencies from {}".format(
+                self.fnames[split + "_num_entities" + suffix]))
             num_ents = pickle.load(open(
                 self.fnames[split + "_num_entities" + suffix], "r"))
+
+            print("Reading entity mentions from {}".format(
+                self.fnames[split + "_entity_mentions" + suffix]))
             ent_ments = pickle.load(open(
                 self.fnames[split + "_entity_mentions" + suffix], "r"))
 
-            print("Reading from Data File")
-
             df = None
             for df_name in df_names:
+                print("Reading data from {}".format(df_name))
                 if df is None:
                     df = pd.read_csv(df_name)
                 else:

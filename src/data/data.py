@@ -132,8 +132,8 @@ class DataLoader(object):
 
         # File names we'll load to create the data
         self.fnames = {
-            "train": ["data/training/allcharlinepairs.csv",
-                      "data/training/allcharlinepairs_part2.csv"],
+            "train": ["data/training/allcharlinepairs_noids.csv",
+                      "data/training/allcharlinepairs_part2_noids.csv"],
             "train_entity": "data/training/entity_lines_fast.pickle",
             "train_entity_mentions": "data/training/entity_mentions.pickle",
             "train_num_entities": "data/training/num_entities.pickle",
@@ -141,14 +141,14 @@ class DataLoader(object):
             "dev_entity": "data/dev/entity_lines_fast.pickle",
             "dev_entity_mentions": "data/dev/entity_mentions.pickle",
             "dev_num_entities": "data/dev/num_entities.pickle",
-            "dev_emotion": "data/dev/emotion/allcharlinepairs.csv",
-            "dev_motivation": "data/dev/motivation/allcharlinepairs.csv",
+            "dev_emotion": "data/dev/emotion/allcharlinepairs_noids.csv",
+            "dev_motivation": "data/dev/motivation/allcharlinepairs_noids.csv",
 
             "test_entity": "data/test/entity_lines_fast.pickle",
             "test_entity_mentions": "data/test/entity_mentions.pickle",
             "test_num_entities": "data/test/num_entities.pickle",
-            "test_emotion": "data/test/emotion/allcharlinepairs.csv",
-            "test_motivation": "data/test/motivation/allcharlinepairs.csv",
+            "test_emotion": "data/test/emotion/allcharlinepairs_noids.csv",
+            "test_motivation": "data/test/motivation/allcharlinepairs_noids.csv",
 
         }
 
@@ -330,12 +330,22 @@ class NeuralModelDataLoader(DataLoader):
 
             print "Reading from Data File"
             if split == "train":
+                print("Reading data from {}".format(self.fnames[split]))
                 data = pd.read_csv(self.fnames[split])
             else:
+                print("Reading data from {}".format(
+                    self.fnames["{}_{}".format(split, type_)]))
                 data = pd.read_csv(self.fnames["{}_{}".format(split, type_)])
-            ents = pickle.load(open(self.fnames[split + "_entity"], "r"))
+            print("Reading entity identities from {}".format(
+                self.fnames[split + "_entity"]))
+            ents = pickle.load(open(
+                self.fnames[split + "_entity"], "r"))
+            print("Reading entity frequencies from {}".format(
+                self.fnames[split + "_num_entities"]))
             num_ents = pickle.load(open(
                 self.fnames[split + "_num_entities"], "r"))
+            print("Reading entity mentions from {}".format(
+                self.fnames[split + "_entity_mentions"]))
             ent_ments = pickle.load(open(
                 self.fnames[split + "_entity_mentions"], "r"))
 
@@ -350,18 +360,15 @@ class NeuralModelDataLoader(DataLoader):
             print "Putting Data in Tensors"
             print "Doing {}".format(split)
 
-            if split == "train":
-                id_idx = "freerespworkerid"
-            else:
-                if self.type == "emotion":
-                    id_idx = "emotionworkerid"
-                else:
-                    id_idx = "motiveworkerid"
-
             bar = progressbar.ProgressBar(max_value=len(data.index))
             bar.update(0)
 
+            # track visited story-character-line triplets
             visited = set()
+
+            # Count of how many times a story-character-line triplet is seen
+            # for the purpose of making IDs
+            counter = {}
 
             for i in data.index:
                 if opt.data.label == "majority" and i in visited:
@@ -376,12 +383,12 @@ class NeuralModelDataLoader(DataLoader):
                     condition = condition & (data["linenum"] == row["linenum"])
                     same_rows = data[condition]
                     self.do_row(row, ents, ent_ments[sid],
-                                num_ents[sid], split, id_idx,
+                                num_ents[sid], split, None,
                                 same_row=same_rows)
                     visited = visited.union(same_rows.index)
                 else:
-                    self.do_row(row, ents, ent_ments[sid],
-                                num_ents[sid], split, id_idx)
+                    self.do_row(row, ents, ent_ments[sid], counter,
+                                num_ents[sid], split)
                 bar.update(bar.value + 1)
 
             self.offset[split] = {i: 0 for i in self.labels[split]}
@@ -399,7 +406,7 @@ class NeuralModelDataLoader(DataLoader):
         return ctx
 
     def do_row(self, row, ents, ent_ments, num_ents,
-               split, id_idx, same_row=None):
+               split, counter, same_row=None):
         # Find entity in entity file
         story = row["storyid"]
         char = row["char"]
@@ -419,7 +426,9 @@ class NeuralModelDataLoader(DataLoader):
         if same_row is not None:
             id_ = (story, char, line_num)
         else:
-            id_ = (story, char, line_num, row[id_idx])
+            counter.setdefault((story, char, line_num), 0)
+            id_ = (story, char, line_num, counter[(story, char, line_num)])
+            counter[(story, char, line_num)] += 1
 
         sl = len(sent)
         cl = len(ctx)
@@ -674,7 +683,7 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
         return eids, elabel
 
     def do_row(self, row, ents, ent_ments, num_ents,
-               split, id_idx, same_row=None):
+               split, counter, same_row=None):
         # Find entity in entity file
         story = row["storyid"]
         char = row["char"]
@@ -700,7 +709,9 @@ class MemoryModelDataLoader(NeuralModelDataLoader):
         if same_row is not None:
             id_ = (story, char, line_num)
         else:
-            id_ = (story, char, line_num, row[id_idx])
+            counter.setdefault((story, char, line_num), 0)
+            id_ = (story, char, line_num, counter[(story, char, line_num)])
+            counter[(story, char, line_num)] += 1
 
         # Get sentence lengths
         sl = len(sent)

@@ -8,7 +8,7 @@ Starting from whatever directory you will be placing the scs-baselines repositor
 ```
 git clone git@github.com:atcbosselut/scs-baselines.git
 cd scs-baselines
-wget http://homes.cs.washington.edu/~antoineb/datasets/scs-baselines-data.tar.gz
+wget http://homes.cs.washington.edu/~antoineb/datasets/scs-baselines-data-noids.tar.gz
 tar -xvzf scs-baselines-data.tar.gz
 cd ..
 ```
