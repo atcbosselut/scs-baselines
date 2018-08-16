@@ -187,14 +187,6 @@ class NeuralGenModelDataLoader(data.DataLoader):
             print("Putting Data in Tensors")
             print("Doing {}".format(split))
 
-            if split == "train":
-                id_idx = "freerespworkerid"
-            else:
-                if self.type == "emotion":
-                    id_idx = "emotionworkerid"
-                else:
-                    id_idx = "motiveworkerid"
-
             n_cond = ((df[self.type] == "['none']") |
                       (df[self.type] == '["none"]'))
             nones = df[n_cond]
@@ -206,12 +198,16 @@ class NeuralGenModelDataLoader(data.DataLoader):
             bar = progressbar.ProgressBar(max_value=len(nones.index))
             bar.update(0)
 
+            # Count of how many times a story-character-line triplet is seen
+            # for the purpose of making IDs
+            counter = {}
+
             print("DOING NEGATIVES")
             for i in nones.index:
                 row = nones.loc[i]
                 sid = row["storyid"]
                 self.do_row(row, ents, ent_ments[sid],
-                            num_ents[sid], split, "neg", id_idx)
+                            num_ents[sid], split, "neg", counter)
                 bar.update(bar.value + 1)
 
             print("DOING POSITIVES")
@@ -222,7 +218,7 @@ class NeuralGenModelDataLoader(data.DataLoader):
                 row = somes.loc[i]
                 sid = row["storyid"]
                 self.do_row(row, ents, ent_ments[sid], num_ents[sid],
-                            split, "pos", id_idx, (pruned and
+                            split, "pos", counter, (pruned and
                             (type_ == "motivation")))
                 bar.update(bar.value + 1)
 
@@ -243,7 +239,7 @@ class NeuralGenModelDataLoader(data.DataLoader):
         return ctx
 
     def do_row(self, row, ents, ent_ments, num_ents,
-               split, pn, id_idx, pruned=False):
+               split, pn, counter, pruned=False):
 
         gens = gen_lit_eval(row[self.type])
 
@@ -286,7 +282,10 @@ class NeuralGenModelDataLoader(data.DataLoader):
             key = (len(gen), row["linenum"])
 
             # Get story id_
-            id_ = (story, char, line_num, row[id_idx], gen_num)
+            counter.setdefault((story, char, line_num), 0)
+            worker_count = counter[(story, char, line_num)]
+            id_ = (story, char, line_num, worker_count, gen_num)
+            counter[(story, char, line_num)] += 1
 
             if key not in self.sent[pn][split]:
                 self.sent[pn][split][key] = \
@@ -488,7 +487,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
         return eids, elabel
 
     def do_row(self, row, ents, ent_ments, num_ents,
-               split, pn, id_idx, pruned=False):
+               split, pn, counter, pruned=False):
 
         story = row["storyid"]
         char = row["char"]
@@ -537,7 +536,10 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
             key = (len(gen), row["linenum"], len(num_ents))
 
             # Get story id_
-            id_ = (story, char, line_num, row[id_idx], gen_num)
+            counter.setdefault((story, char, line_num), 0)
+            worker_count = counter[(story, char, line_num)]
+            id_ = (story, char, line_num, worker_count, gen_num)
+            counter[(story, char, line_num)] += 1
 
             if key not in self.sent[pn][split]:
                 self.sent[pn][split][key] = \
