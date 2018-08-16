@@ -61,7 +61,7 @@ This command will load the configuration settings in the ```config/gen_config.js
 
 ## Training a classification model with a pretrained generation model
 
-To run a classification model using a model pretrained on generation, do the following. First, initialize an entry in the ```config/pretrained_config.json``` JSON configuration file whose key is "load_model_${MODEL_TYPE}_${TASK}" where $TASK is one of *motivation* or *emotion* and ${MODEL_TYPE} is a class of model such as *lstm*, *cnn*, *ren*, or *npn*. Then, run the following command:
+To run a classification model using a model pretrained on generation, do the following. First, initialize an entry in the ```config/pretrained_config.json``` JSON configuration file whose key is "load_model_${MODEL_TYPE}_${TASK}" where $TASK is one of *motivation* or *emotion* and ${MODEL_TYPE} is a class of model such as *lstm*, *cnn*, *ren*, or *npn*. An example is provided in the configuration file. Then, run the following command:
 
 ```
 python src/main_pretrained.py
