@@ -288,22 +288,22 @@ def compute_scores(vocab, scores, counts, _labels, predicted):
     rec_cover = (rec_norm == 0).float() + rec_norm
 
     # Compute a microaverage over all the  labels
-    scores["{}_precision_micro".format(word)] += \
+    scores["{}_precision_macro".format(word)] += \
         (local_precision / prec_cover.unsqueeze(1).repeat(
             1, vocab_size)).sum()
-    scores["{}_recall_micro".format(word)] += \
+    scores["{}_recall_macro".format(word)] += \
         (local_recall / rec_cover.unsqueeze(1).repeat(
             1, vocab_size)).sum()
-    scores["{}_precision_macro".format(word)] += \
+    scores["{}_precision_micro".format(word)] += \
         local_precision.sum()
-    scores["{}_recall_macro".format(word)] += \
+    scores["{}_recall_micro".format(word)] += \
         local_recall.sum()
     scores["{}_accuracy".format(word)] += correct.sum()
 
-    counts["{}_precision_micro".format(word)] += (prec_norm != 0).sum()
-    counts["{}_recall_micro".format(word)] += (rec_norm != 0).sum()
-    counts["{}_precision_macro".format(word)] += predicted.sum()
-    counts["{}_recall_macro".format(word)] += _labels.sum()
+    counts["{}_precision_macro".format(word)] += (prec_norm != 0).sum()
+    counts["{}_recall_macro".format(word)] += (rec_norm != 0).sum()
+    counts["{}_precision_micro".format(word)] += predicted.sum()
+    counts["{}_recall_micro".format(word)] += _labels.sum()
     counts["{}_accuracy".format(word)] += (bs * vocab_size)
 
     return scores, counts
