@@ -34,38 +34,57 @@ splits = ["dev", "test"]
 
 for i in range(3):
     if i == 0:
-        word = "emotion"
-        classify = "plutchik"
+        experiment = "emotion"
+        label_set = "plutchik"
     elif i == 1:
-        word = "motivation"
-        classify = "maslow"
+        experiment = "motivation"
+        label_set = "maslow"
     elif i == 2:
-        word = "motivation"
-        classify = "reiss"
+        experiment = "motivation"
+        label_set = "reiss"
 
     print("Making {} labels for {} data for {} class of models".format(
-        word, classify, sys.argv[1]))
+        experiment, label_set, sys.argv[1]))
 
     opt = DD()
     opt.data = DD()
     opt.data.label = "majority"
 
+    # Make a memory model (EntNet, NPN) data loader for generation
     if sys.argv[1] == "memory":
-        x = data.MemoryModelDataLoader()
-        x.load_vocabs(vocab_paths, vocab_text)
-        x.load_data(opt, splits, type_=word, granularity=classify)
+        # Initialize data loader and load vocabularies and data
+        data_loader = data.MemoryModelDataLoader()
+        data_loader.load_vocabs(vocab_paths, vocab_text)
+        data_loader.load_data(
+            opt, splits, type_=experiment, granularity=label_set)
+
+        # Make save name
         name = "processed/{}/{}_{}_{}_{}_data_loader.pth".format(
-            word, opt.data.label, "memory", classify, "-".join(splits))
+            experiment, opt.data.label, "memory", label_set, "-".join(splits))
+
+        # Compute maximum number of words in input sentences
+        # (useful for later model initialization)
         max_words = 0
-        for split_data in x.ctx_maxes.values():
+        for split_data in data_loader.ctx_maxes.values():
             max_words = max(max_words, max(split_data.values()))
+    # Make a neural (rnn, cnn) data loader for generation
     else:
-        x = data.NeuralModelDataLoader()
-        x.load_vocabs(vocab_paths, vocab_text)
-        x.load_data(opt, splits, type_=word, granularity=classify)
+        # Initialize data loader and load vocabularies and data
+        data_loader = data.NeuralModelDataLoader()
+        data_loader.load_vocabs(vocab_paths, vocab_text)
+        data_loader.load_data(
+            opt, splits, type_=experiment, granularity=label_set)
+
+        # Make save name
         name = "processed/{}/{}_{}_{}_{}_data_loader.pth".format(
-            word, opt.data.label, "neural", classify, "-".join(splits))
-        max_words = max(x.ctx_maxes.values())
-    max_words = max(max(x.sent_maxes.values()), max_words)
-    x.max_words = max_words
-    torch.save(x, open(name, "w"))
+            experiment, opt.data.label, "neural", label_set, "-".join(splits))
+
+        # Compute maximum number of words in input sentences
+        # (useful for later model initialization)
+        max_words = max(data_loader.ctx_maxes.values())
+
+    max_words = max(max(data_loader.sent_maxes.values()), max_words)
+    data_loader.max_words = max_words
+
+    # Save data loader for quicker loading in experiments
+    torch.save(data_loader, open(name, "w"))

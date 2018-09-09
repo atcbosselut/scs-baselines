@@ -1,3 +1,10 @@
+"""
+File for methods related to evaluating model performance
+on the story commonsense dataset.
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import time
 import progressbar
 
@@ -224,6 +231,7 @@ def initialize_scores(vocab):
     scores = {}
     counts = {}
 
+    # Individual category scores
     for i, word in vocab.iteritems():
         scores["{}_precision".format(word)] = 0
         scores["{}_recall".format(word)] = 0
@@ -233,6 +241,7 @@ def initialize_scores(vocab):
         counts["{}_recall".format(word)] = 0
         counts["{}_accuracy".format(word)] = 0
 
+    # Scores across all categories
     word = "total"
     scores["{}_precision_micro".format(word)] = 0
     scores["{}_recall_micro".format(word)] = 0
@@ -287,13 +296,16 @@ def compute_scores(vocab, scores, counts, _labels, predicted):
     prec_cover = (prec_norm == 0).float() + prec_norm
     rec_cover = (rec_norm == 0).float() + rec_norm
 
-    # Compute a microaverage over all the  labels
+    # Compute a macroaverage over all the  labels
     scores["{}_precision_macro".format(word)] += \
         (local_precision / prec_cover.unsqueeze(1).repeat(
             1, vocab_size)).sum()
     scores["{}_recall_macro".format(word)] += \
         (local_recall / rec_cover.unsqueeze(1).repeat(
             1, vocab_size)).sum()
+
+    # Compute a microaverage over all the labels
+    # (this is the one reported in the paper)
     scores["{}_precision_micro".format(word)] += \
         local_precision.sum()
     scores["{}_recall_micro".format(word)] += \

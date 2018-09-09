@@ -1,3 +1,10 @@
+"""
+Library of simple model classes that are often used
+in text understanding
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import src.data.config as cfg
 
 import torch

@@ -1,3 +1,9 @@
+"""
+File for defining Entnet and related methods.
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import src.data.config as cfg
 import src.models.models as models
 
@@ -52,6 +58,8 @@ class EntNet(nn.Module):
         self.is_cuda = False
 
     def initialize_entities(self, entity_ids=None, batch_size=32):
+        # If no special entities are being initialized, just select n entities
+        # In this work, entities are usually tied -> entity_ids should be given
         if entity_ids is None:
             entity_ids = Variable(torch.LongTensor(range(self.opt.ents)).view(
                 1, self.opt.ents).expand(batch_size, self.opt.ents))
@@ -59,12 +67,16 @@ class EntNet(nn.Module):
                 entity_ids = entity_ids.cuda(cfg.device)
         keys = self.key_init(entity_ids)
 
+        # Should we lock the keys to their starting value (useful if keys
+        # are initialized with Glove vectors or something of the like)
         if self.opt.lk:
             keys = keys.detach()
 
         self.keys = keys
 
+        # Initialize entity memory values the same as keys
         entities = self.key_init(entity_ids.detach())
+
         return self.keys, entities, None
 
     def forward(self, sentences, sentence_lengths,
@@ -103,7 +115,7 @@ class EntNet(nn.Module):
             print "Loading entity embeddings from {}".format(name)
             with open(name, "r") as f:
                 entity_words = pickle.load(f)
-            # print vocab
+
             for i, word in vocab.iteritems():
                 if word in ["<unk>", "<start>", "<end>", "<pad>"]:
                     self.key_init.weight.data[i].zero_()

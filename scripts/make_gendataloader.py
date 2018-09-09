@@ -32,33 +32,50 @@ vocab_text = {
 
 splits = ["train", "dev", "test"]
 
-for word in ["emotion", "motivation"]:
+for experiment in ["emotion", "motivation"]:
     print("Making {} data for {} class of models".format(
-        word, sys.argv[1]))
+        experiment, sys.argv[1]))
 
     opt = DD()
     opt.data = DD()
     opt.data.pruned = True
 
+    # Make a memory model (EntNet, NPN) data loader for generation
     if sys.argv[1] == "memory":
+        # Make save name
         name = "processed/{}/{}_{}_data_loader.pth".format(
-            word, "gen_memory", "-".join(splits))
+            experiment, "gen_memory", "-".join(splits))
         print (name)
-        x = data.MemoryGenModelDataLoader()
-        x.load_vocabs(vocab_paths, vocab_text)
-        x.load_data(opt, splits, type_=word, pruned=opt.data.pruned)
-        max_words = 0
-        for split_data in x.ctx_maxes.values():
-            max_words = max(max_words, max(split_data.values()))
-    else:
-        name = "processed/{}/{}_{}_data_loader.pth".format(
-            word, "gen_neural", "-".join(splits))
-        print(name)
-        x = data.NeuralGenModelDataLoader()
 
-        x.load_vocabs(vocab_paths, vocab_text)
-        x.load_data(opt, splits, type_=word, pruned=opt.data.pruned)
-        max_words = max(x.ctx_maxes.values())
-    max_words = max(max(x.sent_maxes.values()), max_words)
-    x.max_words = max_words
-    torch.save(x, open(name, "w"))
+        # Initialize data loader and load vocabs and raw data
+        data_loader = data.MemoryGenModelDataLoader()
+        data_loader.load_vocabs(vocab_paths, vocab_text)
+        data_loader.load_data(
+            opt, splits, type_=experiment, pruned=opt.data.pruned)
+
+        # Compute maximum number of words in input sentences
+        # (useful for later model initialization)
+        max_words = 0
+        for split_data in data_loader.ctx_maxes.values():
+            max_words = max(max_words, max(split_data.values()))
+    # Make a neural (rnn, cnn) data loader for generation
+    else:
+        # Make save name
+        name = "processed/{}/{}_{}_data_loader.pth".format(
+            experiment, "gen_neural", "-".join(splits))
+        print(name)
+
+        # Initialize data loader and load vocabs and raw data
+        data_loader = data.NeuralGenModelDataLoader()
+        data_loader.load_vocabs(vocab_paths, vocab_text)
+        data_loader.load_data(
+            opt, splits, type_=experiment, pruned=opt.data.pruned)
+
+        # Compute maximum number of words in input sentences
+        # (useful for later model initialization)
+        max_words = max(data_loader.ctx_maxes.values())
+
+    max_words = max(max(data_loader.sent_maxes.values()), max_words)
+    data_loader.max_words = max_words
+
+    torch.save(data_loader, open(name, "w"))

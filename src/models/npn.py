@@ -1,3 +1,9 @@
+"""
+File for defining the NPN class and related methods.
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import src.data.config as cfg
 import src.models.models as models
 
@@ -39,25 +45,15 @@ class EntityUpdater(nn.Module):
         super(EntityUpdater, self).__init__()
         self.opt = opt
 
-        # Update entities with projected key (See REN Paper)
-        if "k" in self.opt.afunc:
-            print "Key Applicator"
-            self.key_applicator = nn.Linear(
-                opt.eSize, opt.eSize, False)
-
-        # Update entities with projected valie (See REN Paper)
-        if "v" in self.opt.afunc:
-            print "Val Applicator"
-            self.val_applicator = nn.Linear(
-                opt.eSize, opt.eSize, False)
-
-        # Update entities with projected context (See REN Paper)
+        # Update entities with projected context (See EntNet Paper)
         if "c" in self.opt.afunc:
             print "Context Application"
             self.ctx_applicator = nn.Linear(
                 opt.hSize, opt.eSize, False)
 
         self.act = nn.PReLU(opt.eSize)
+
+        # Initialize PReLU negative zone slope to 1
         if "1" in self.opt.act:
             self.act.weight.data.fill_(1)
 
@@ -66,13 +62,15 @@ class EntityUpdater(nn.Module):
         num_items = entities.size(1)
         hidden_size = entities.size(2)
 
+        # get update values from context and from applicator
         oc, oa = self.compute_update_components(
             entities, new_entities, keys, ctx)
 
-        # Format attention weights
+        # Format attention weights for memory overwrite
         n_dist = dist.view(batch_size, num_items, 1).expand(
             batch_size, num_items, hidden_size)
 
+        # Update the entity memory
         new_ents = self.update_entities(oc, oa, n_dist, entities)
 
         # Normalize entities
@@ -84,15 +82,18 @@ class EntityUpdater(nn.Module):
         num_items = entities.size(1)
         hidden_size = entities.size(2)
 
-        # Update entities "n" = don't interpolate
+        # Just add on contribution of new entities to old ones
         if "n" not in self.opt.afunc:
+            # Identity activation
             if self.opt.act == "I":
                 new_ents = ((n_dist * (oa + oc)) + (1 - n_dist) *
                             entities)
+            # PReLU activation
             else:
                 pre_act = (oa + oc).view(-1, hidden_size)
                 new_ents = ((n_dist * self.act(pre_act).view(
                     batch_size, num_items, -1)) + (1 - n_dist) * entities)
+        # Do interplation of previous entities and current entities
         else:
             if self.opt.act == "I":
                 new_ents = entities + n_dist * (oa + oc)
@@ -131,11 +132,28 @@ class EntityUpdater(nn.Module):
 
 
 class EntitySelector(nn.Module):
+    """
+    Select entities using hidden state from encoder
+
+    Input:
+        hidden: hidden state from encoder
+        entities: entity vals at start of EntNet cycle
+                  (batch_size x num_entities x entity_size)
+        keys: key vector for entities
+        prev_attn: previous step's attention distribution
+
+    Output:
+        selected_entities: selected entity vectors from attention distribution
+        entity_dist: attention distribution over entities
+        acts: activations of attention distribution
+    """
     def __init__(self, opt):
         super(EntitySelector, self).__init__()
 
         self.initialize_attention(opt)
 
+        # Initialize ppreprocessing projections of
+        # sentence encoder hiddens state
         self.preprocess = nn.Sequential()
         for i in range(opt.eNL):
             self.preprocess.add_module(
@@ -149,10 +167,14 @@ class EntitySelector(nn.Module):
         self.opt = opt
 
     def initialize_attention(self, opt):
+        # Initialize attention function
+        # Use bilinear attention
         self.attention = models.BilinearAttention(
             2 * opt.eSize, opt.hSize, 1,
             bias=False, act="sigmoid")
 
+        # If recurrent attention is used,
+        # initialize it
         if opt.rec:
             self.choice = nn.Sequential(nn.Linear(opt.hSize, 2),
                                         nn.Softmax(dim=1))
@@ -161,19 +183,24 @@ class EntitySelector(nn.Module):
         self.attender = models.Attender()
 
     def forward(self, hidden, entities, keys, prev_attn):
+        # Transform sentence encoder representation
         preprocessed = self.preprocess(hidden)
 
+        # Compute attention with respect to entity memory
         dist, acts = self.forward_attention(keys, preprocessed, entities)
 
+        # Use recurrent attention
         entity_dist, choice_dist = self.recurrent_attention(
             dist, preprocessed, prev_attn)
 
+        # Attend to entities with final distribution
         selected_entities = self.attender(
             entities, entity_dist, self.opt.eRed)
 
         return selected_entities, entity_dist, acts
 
     def forward_attention(self, keys, preprocessed, entities):
+        # Attend preprocessed hidden state to entities
         dist, act = self.attention(torch.cat(
             [entities, keys], 2), preprocessed)
         return dist, act
@@ -181,6 +208,8 @@ class EntitySelector(nn.Module):
     def recurrent_attention(self, dist, preprocessed, prev_attn):
         batch_size = preprocessed.size(0)
         if self.opt.rec and prev_attn is not None:
+            # Compute choice over whether to use current step's attention
+            # or fall back to previous step's entity attention
             choice_dist = self.choice(preprocessed)
             return self.choice_attender(torch.cat(
                 [prev_attn.view(batch_size, 1, -1),
@@ -200,26 +229,45 @@ class EntitySelector(nn.Module):
 
 
 class BilinearApplicator(nn.Module):
+    """
+    Transforms selected entity embeddings by action functions
+
+    Initialization Args:
+        opt.aSize: size of action function embeddings
+        opt.eSize: size of entity embeddings
+
+    Input:
+        actions: weighted sum of action functions
+        entities: entity embeddings or all entity embeddings
+
+    Output:
+        output: encoded sentence embedding
+
+    """
     def __init__(self, opt):
         super(BilinearApplicator, self).__init__()
         self.applicator = nn.Bilinear(opt.aSize, opt.eSize,
                                       opt.eSize, False)
 
     def forward(self, actions, entities):
+        # If entity embeddings haven't been reduced by their attention
+        # Apply action function directly to each entity embedding
         if entities.dim() == 3:
             bs = entities.size(0)
             num_ents = entities.size(1)
             h_dim = entities.size(2)
-
             a_dim = actions.size(1)
 
             parallel_entities = entities.view(-1, h_dim)
             repeated_actions = actions.view(bs, 1, a_dim).repeat(
                 1, num_ents, 1).contiguous().view(-1, a_dim)
+
             out = self.applicator(repeated_actions, parallel_entities)
+
             return out.view(entities.size(0),
                             entities.size(1),
                             entities.size(2))
+        # apply average action function to average entity embedding
         else:
             return self.applicator(actions, entities)
 
@@ -230,6 +278,22 @@ class BilinearApplicator(nn.Module):
 
 
 class SentenceEncoder(nn.Module):
+    """
+    Wrapper class for a sentence encoder
+
+    Initialization Args:
+        opt: options to pass to sentence encoder class
+        max_words: maximum number of words in any sentence in
+                   data
+
+    Input:
+        input: word indices for a sentence (batch_size x num_words)
+        lengths: number of non-pad indices in each sentence in the batch
+
+    Output:
+        output: encoded sentence embedding
+
+    """
     def __init__(self, opt, max_words=None):
         super(SentenceEncoder, self).__init__()
         self.opt = opt
@@ -449,7 +513,7 @@ class NPN(nn.Module):
             print "Loading entity embeddings from {}".format(name)
             with open(name, "r") as f:
                 entity_words = pickle.load(f)
-            # print vocab
+
             for i, word in vocab.iteritems():
                 if word in ["<unk>", "<start>", "<end>", "<pad>"]:
                     self.key_init.weight.data[i].zero_()
@@ -462,9 +526,11 @@ class NPN(nn.Module):
 
     def initialize_actions(self, init, vocab):
         if init == "n":
+            # Xavier initialization
             stdv = 1. / math.sqrt(self.action_selector.actions.size(1))
             self.action_selector.actions.data.uniform_(-stdv, stdv)
         elif "gauss" in init:
+            # Gaussian initialization
             deets = init.split("+")
             mean = deets[1]
             stddev = deets[2]

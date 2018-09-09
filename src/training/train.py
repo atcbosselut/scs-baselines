@@ -1,3 +1,10 @@
+"""
+File for methods related to training models on the
+story commonsense dataset.
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import pickle
 
 import torch
@@ -15,7 +22,6 @@ import utils.model_utils as model_utils
 
 def train_gen(opt, meta, model, data_loader, gpu=True):
     bar = progressbar.ProgressBar()
-    iter_loss = []
     eval_losses = {}
 
     encoder = model.encoder
@@ -34,6 +40,7 @@ def train_gen(opt, meta, model, data_loader, gpu=True):
 
     opt.train.dynamic.epoch = 0
 
+    # Initialize loss trackers
     iter_loss = {"token_{}_pos".format(opt.task): [],
                  "token_{}_neg".format(opt.task): []}
 

@@ -1,3 +1,15 @@
+"""
+File for methods related to parsing data files and
+initializing a data loader for generation tasks.
+Classes in this file build specific data loaders for
+relevant models for generation experiments.
+
+Each data loader has methods for shuffling its data,
+sampling batches, loading examples from files, etc.
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import ast
 import pickle
 import random
@@ -12,7 +24,7 @@ import src.data.config as cfg
 import src.data.data as data
 
 
-# Translate pandas dataframe cells
+# Translate pandas dataframe cells and tokenize data
 def gen_lit_eval(s):
     if isinstance(s, str):
         if ('["' in s or "['" in s) and ('"]' in s or "']" in s):
@@ -148,6 +160,7 @@ class NeuralGenModelDataLoader(data.DataLoader):
             else:
                 df_names = [self.fnames["{}_{}".format(split, type_)]]
 
+            # Load all necessary data files
             print("Reading from Data Files")
 
             print("Reading entity identities from {}".format(
@@ -187,6 +200,7 @@ class NeuralGenModelDataLoader(data.DataLoader):
             print("Putting Data in Tensors")
             print("Doing {}".format(split))
 
+            # Organize data frame into positive and negative examples
             n_cond = ((df[self.type] == "['none']") |
                       (df[self.type] == '["none"]'))
             nones = df[n_cond]
@@ -203,9 +217,11 @@ class NeuralGenModelDataLoader(data.DataLoader):
             counter = {}
 
             print("DOING NEGATIVES")
+            # Produce negative examples
             for i in nones.index:
                 row = nones.loc[i]
                 sid = row["storyid"]
+                # Make negative exaple for single row in raw DataFrame
                 self.do_row(row, ents, ent_ments[sid],
                             num_ents[sid], split, "neg", counter)
                 bar.update(bar.value + 1)
@@ -214,14 +230,17 @@ class NeuralGenModelDataLoader(data.DataLoader):
             bar = progressbar.ProgressBar(max_value=len(somes.index))
             bar.update(0)
 
+            # Produce positive examples
             for i in somes.index:
                 row = somes.loc[i]
                 sid = row["storyid"]
+                # Make positive exaple for single row in raw DataFrame
                 self.do_row(row, ents, ent_ments[sid], num_ents[sid],
                             split, "pos", counter, (pruned and
                             (type_ == "motivation")))
                 bar.update(bar.value + 1)
 
+            # Set offsets
             self.offset["neg"][split] = {i: 0 for i in self.ex["neg"][split]}
             self.unfilled["neg"][split] = set(self.offset["neg"][split].keys())
             self.offset["pos"][split] = {i: 0 for i in self.ex["pos"][split]}
@@ -240,9 +259,8 @@ class NeuralGenModelDataLoader(data.DataLoader):
 
     def do_row(self, row, ents, ent_ments, num_ents,
                split, pn, counter, pruned=False):
-
+        # Produce sequences of words in right format
         gens = gen_lit_eval(row[self.type])
-
         raw_sent = sent_lit_eval(row["sentence"])
         sent = [self.vocabs["sentence"][i] for i in raw_sent]
         ctx_ = ctx_lit_eval(row["context"])
@@ -257,16 +275,16 @@ class NeuralGenModelDataLoader(data.DataLoader):
         # To trim context to right parts
         ctx = self.do_context(ctx_, char_lines, line_num)
 
+        # Pad sequences with zeroes to match largest example in bin
         sl = len(sent)
         cl = len(ctx)
-
         sent_diff = self.sent_maxes[split] - sl
         ctx_diff = self.ctx_maxes[split].get(line_num - 2, 1) - cl
-
         sent += [0] * sent_diff
         ctx += [0] * ctx_diff
 
         for gen_num, raw_gen in enumerate(gens):
+            # Remove ``to be" from motivation starts if it's there
             if raw_gen and raw_gen[0] == "to" and pruned:
                 raw_gen = raw_gen[1:]
             if raw_gen and raw_gen[0] == "be" and pruned:
@@ -274,8 +292,8 @@ class NeuralGenModelDataLoader(data.DataLoader):
             if raw_gen and raw_gen[-1] == ".":
                 raw_gen = raw_gen[:-1]
 
+            # Produce open ended annotation data format
             gen = [self.vocabs[self.type][i] for i in raw_gen]
-
             gen.append(self.vocabs[self.type]["<end>"])
             gen.insert(0, self.vocabs[self.type]["<start>"])
 
@@ -321,9 +339,11 @@ class NeuralGenModelDataLoader(data.DataLoader):
                 self.raw_labels[split].get(id_, []) + [raw_gen]
             self.size[pn][split][key] = self.size[pn][split].get(key, 0) + 1
 
+    # Sample a key to access a bin for data
     def sample_keys(self, split, pn="pos"):
         return random.sample(self.unfilled[pn][split], 1)[0]
 
+    # Shuffle sequences
     def shuffle_sequences(self, split, pn, keys):
         orders = {}
         for key in keys:
@@ -350,6 +370,7 @@ class NeuralGenModelDataLoader(data.DataLoader):
     # keyss should be a list of keyss to reset
     def reset_offsets(self, split=None, pn=None, keyss=None, shuffle=False):
         def reset_offset(split, pn, keyss):
+            # Set all offset to 0
             for keys in keyss:
                 if keys in self.offset[pn][split]:
                     self.offset[pn][split][keys] = 0
@@ -358,11 +379,13 @@ class NeuralGenModelDataLoader(data.DataLoader):
             self.unfilled[pn][split] = \
                 self.unfilled[pn][split].union(keyss)
 
+        # Reset all splits if non specified
         if not split:
             splits = self.splits
         else:
             splits = [split]
 
+        # Reset both positive and negative examples if not specified
         if not pn:
             types = ["pos", "neg"]
         else:
@@ -370,11 +393,13 @@ class NeuralGenModelDataLoader(data.DataLoader):
 
         orders = {}
 
+        # Reset offsets when dataset split has veen fully traversed
         for split, pn in itertools.product(splits, types):
             orders.setdefault(pn, {})
             if not keyss:
                 keyss = self.offset[pn][split].keys()
             if shuffle:
+                # Shuffle the examples in each bin
                 orders[pn][split] = \
                     self.shuffle_sequences(split, pn, keyss)
             reset_offset(split, pn, keyss)
@@ -391,12 +416,12 @@ class NeuralGenModelDataLoader(data.DataLoader):
         if not bs:
             bs = self.batch_size
 
+        # Recover the offset and range
         offset = self.offset[pn][split]
-
-        # Choose sequences to batch
         start_idx = offset[keys]
         final_idx = offset[keys] + bs
 
+        # Select data caches
         num_sentences = self.sent[pn][split][keys].size(0)
         examples = self.ex[pn][split][keys]
         sentence = self.sent[pn][split][keys]
@@ -405,6 +430,7 @@ class NeuralGenModelDataLoader(data.DataLoader):
         context_lengths = self.ctx_lengths[pn][split][keys]
         ids = self.ids[pn][split][keys]
 
+        # Compute locations to query
         # Check if final index is greater than number of sequences
         if final_idx < num_sentences:
             idx_range = range(start_idx, final_idx)
@@ -423,6 +449,7 @@ class NeuralGenModelDataLoader(data.DataLoader):
         if self.is_cuda:
             idxs = idxs.cuda(cfg.device)
 
+        # Retrieve relevant examples
         ss = sentence.index_select(0, idxs)
         sl = sentence_lengths.index_select(0, idxs)
         cs = context.index_select(0, idxs)
@@ -432,6 +459,7 @@ class NeuralGenModelDataLoader(data.DataLoader):
 
         return ex, ss, sl, cs, cl, None, None, None, idss, keys
 
+    # Push data to the GPU
     def cuda(self, device_id=None):
         if device_id is None:
             device_id = cfg.device
@@ -457,6 +485,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
         super(MemoryGenModelDataLoader, self).__init__(opt, batch_size)
         self.is_ren = True
 
+    # Produce context sentences
     def do_context(self, ctx_, char_lines, line_num):
         ctx = {}
         for line in range(len(ctx_)):
@@ -493,11 +522,16 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
         char = row["char"]
         line_num = row["linenum"]
 
+        # Get open-ended annotation tokens
         gens = gen_lit_eval(row[self.type])
 
+        # Get sentence tokens
         raw_sent = sent_lit_eval(row["sentence"])
+
+        # Get context tokens
         ctx_ = ctx_lit_eval(row["context"])
 
+        # Get lines the entity appears in in the story
         char_lines = ents[(story, char)]
 
         # Get lines in story where character appears
@@ -521,6 +555,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
             ctx[i] += [0] * ctx_diff
 
         for gen_num, raw_gen in enumerate(gens):
+            # Prune motivation sequences of ``to be" start
             if raw_gen and raw_gen[0] == "to" and pruned:
                 raw_gen = raw_gen[1:]
             if raw_gen and raw_gen[0] == "be" and pruned:
@@ -528,11 +563,12 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
             if raw_gen and raw_gen[-1] == ".":
                 raw_gen = raw_gen[:-1]
 
+            # Produce output free response annotation
             gen = [self.vocabs[self.type][i] for i in raw_gen]
-
             gen.append(self.vocabs[self.type]["<end>"])
             gen.insert(0, self.vocabs[self.type]["<start>"])
 
+            # Produce key identifier
             key = (len(gen), row["linenum"], len(num_ents))
 
             # Get story id_
@@ -541,6 +577,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
             id_ = (story, char, line_num, worker_count, gen_num)
             counter[(story, char, line_num)] += 1
 
+            # Add example to data loader
             if key not in self.sent[pn][split]:
                 self.sent[pn][split][key] = \
                     torch.LongTensor(sent).unsqueeze(0)
@@ -602,6 +639,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
                 self.raw_labels[split].get(id_, []) + [raw_gen]
             self.size[pn][split][key] = self.size[pn][split].get(key, 0) + 1
 
+    # Sample a batch from the data_loader
     def sample_batches(self, split, pn, keys=None, bs=None):
         # If specific key isn't specified, sample a key
         if not keys:
@@ -610,12 +648,12 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
         if not bs:
             bs = self.batch_size
 
+        # Recover the offset and range
         offset = self.offset[pn][split]
-
-        # Choose sequences to batch
         start_idx = offset[keys]
         final_idx = offset[keys] + bs
 
+        # Select data caches
         num_sentences = self.sent[pn][split][keys].size(0)
         examples = self.ex[pn][split][keys]
         sentence = self.sent[pn][split][keys]
@@ -627,6 +665,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
         ent_labels = self.ent_labels[pn][split][keys]
         ids = self.ids[pn][split][keys]
 
+        # compute indices to query
         # Check if final index is greater than number of sequences
         if final_idx < num_sentences:
             idx_range = range(start_idx, final_idx)
@@ -645,6 +684,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
         if self.is_cuda:
             idxs = idxs.cuda(cfg.device)
 
+        # Retrieve examples
         s = sorted(context.keys())
 
         ss = sentence.index_select(0, idxs)
@@ -660,6 +700,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
 
         return ex, ss, sl, cs, cl, e, ei, el, idss, keys
 
+    # Push all sequences to GPU
     def cuda(self, device_id=None):
         self.is_cuda = True
         if device_id is None:
@@ -687,6 +728,7 @@ class MemoryGenModelDataLoader(NeuralGenModelDataLoader):
                     self.ex[pn][split][key] = \
                         self.ex[pn][split][key].cuda(device_id)
 
+    # Shuffle all sequences
     def shuffle_sequences(self, split, pn, keys):
         orders = {}
         for key in keys:

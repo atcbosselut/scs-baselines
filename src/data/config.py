@@ -1,3 +1,10 @@
+"""
+File for methods related to loading configuration files
+and seting experiment parameters
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import json
 from jobman import DD
 

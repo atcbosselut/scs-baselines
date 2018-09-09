@@ -1,3 +1,9 @@
+"""
+Library of certain baselines used in the paper
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import src.data.config as cfg
 import src.models.models as models
 import src.models.npn as npn
@@ -34,52 +40,73 @@ class Model(nn.Module):
         if opt.enc.model == "ren":
             self.encoder = entnet.EntNet(opt.enc, max_words)
             if "gauss" in opt.enc.init:
-                deets = opt.enc.init.split("+")
-                mean = deets[1]
-                stddev = deets[2]
+                mean_std = opt.enc.init.split("+")
+                mean = mean_std[1]
+                stddev = mean_std[2]
                 print("Using Gaussian Initialization with Mean = {} and \
                     Standard Deviation = {}").format(
                     float(mean), float(stddev))
                 for parameter in self.encoder.parameters():
                     parameter.data.normal_(float(mean), float(stddev))
+            # Initialize Weighted BOW weights as 1
+            # similar to Henaff et al., 2016
             self.encoder.encoder.sentence_encoder.weights.data.fill_(1)
+
+            # Load pretrained embeddings
             if opt.enc.pt != "none":
                 self.encoder.encoder.sentence_encoder.load_embeddings(vocab)
             if opt.enc.entpt != "none":
                 self.encoder.load_entity_embeddings(ent_vocab)
 
+        # This version of the NPN uses a similar sentence encoder as EntNet
         elif opt.enc.model == "npn":
             self.encoder = npn.NPN(opt.enc, max_words)
             if "gauss" in opt.enc.init:
-                deets = opt.enc.init.split("+")
-                mean = deets[1]
-                stddev = deets[2]
+                mean_std = opt.enc.init.split("+")
+                mean = mean_std[1]
+                stddev = mean_std[2]
                 print("Using Gaussian Initialization with Mean = {} and \
                     Standard Deviation = {}").format(
                     float(mean), float(stddev))
                 for parameter in self.encoder.parameters():
                     parameter.data.normal_(float(mean), float(stddev))
             self.encoder.encoder.sentence_encoder.weights.data.fill_(1)
+
+            # Load pretrained embeddings
             if opt.enc.pt != "none":
                 self.encoder.encoder.sentence_encoder.load_embeddings(vocab)
                 self.encoder.action_enc.sentence_encoder.load_embeddings(vocab)
             if opt.enc.entpt != "none":
                 self.encoder.load_entity_embeddings(ent_vocab)
+
+            # Initialize action functions
             self.encoder.initialize_actions(opt.enc.aI, ent_vocab)
 
         elif opt.enc.model in ["rnn", "lstm", "gru"]:
             self.encoder = RecurrentEncoder(opt.enc)
+
+            # Load pretrained embeddings
             if opt.enc.pt != "none":
                 self.encoder.sentence_encoder.load_embeddings(vocab)
+
             self.mult += opt.enc.get("bid", 0)
             self.mult *= opt.enc.get("nL", 1)
 
         elif opt.enc.model == "cnn":
             self.encoder = CNNEncoder(opt.enc)
+
+            # Load pretrained embeddings
             if opt.enc.pt != "none":
                 self.encoder.load_embeddings(vocab)
+
+            # Depending on how many different kernel sizes
+            # we're using, change the size of the projection
+            # before passing to decoder/classifier
             self.mult = len(opt.enc.ks.split(","))
 
+        # If we're using entity-specific context for a neural model,
+        # set a different encoder with the same architecture as for the
+        # sentence encoder
         if opt.enc.ctx:
             if opt.enc.model in ["rnn", "lstm", "gru"]:
                 self.ent_encoder = RecurrentEncoder(opt.enc)
@@ -212,7 +239,7 @@ class RecurrentEncoder(nn.Module):
 # Adapted from https://github.com/Shawn1993/cnn-text-classification-pytorch
 class CNNEncoder(models.PretrainedEmbeddingsModel):
     """
-    Recurrent neural network encoder
+    Convolutional neural network encoder
 
     Initialization Args:
         opt: options to pass to encoder and decoder
@@ -265,6 +292,27 @@ class CNNEncoder(models.PretrainedEmbeddingsModel):
 
 
 class StatePredictor(nn.Module):
+    """
+    Recurrent neural network encoder
+
+    Initialization Args:
+        opt: classifier options
+        mult: multiplier dictating what factor of hidden size the incoming
+              input will be (e.g., if input encoder was bidirectional LSTM,
+              mult would be 2)
+        ctx: whether entity-specific context encoded and concatenated with
+             sentence encoding
+
+    Inputs:
+        input: encoded representation of sequence (and entity)
+        labels: target labels being predicted
+        weights: importance of each label in the loss function
+
+    Outputs:
+        act: pre-sigmoid activation for each label
+        loss: loss of predicting each label
+        prob: probability of each label
+    """
     def __init__(self, opt, mult=1, ctx=False):
         super(StatePredictor, self).__init__()
 

@@ -1,3 +1,13 @@
+"""
+File for methods related to parsing data files and
+initializing a data loader. Classes in this file build
+specific data loaders for different models/experiments.
+Each data loader has methods for shuffling its data,
+sampling batches, loading examples from files, etc.
+
+author: Antoine Bosselut (atcbosselut)
+"""
+
 import os
 import ast
 import cPickle as pickle
@@ -163,9 +173,6 @@ class DataLoader(object):
 
     def get_maxes(self, data, ctx=False, ents=False):
         maximum = 0
-        if ents:
-            for story, ent_list in data.iteritems():
-                maximum = max(maximum, len(ent_list))
         if not ctx:
             for listed in data:
                 maximum = max(len(listed), maximum)
@@ -292,7 +299,6 @@ class NeuralModelDataLoader(DataLoader):
 
         self.sent_maxes = {}
         self.ctx_maxes = {}
-        self.ent_maxes = {}
 
     # Load data from file
     def load_data(self, opt, splits=["train"], type_="emotion",
@@ -354,8 +360,6 @@ class NeuralModelDataLoader(DataLoader):
                 data["sentence"].apply(lit_eval))
             self.ctx_maxes[split] = self.get_maxes(
                 data["context"].apply(ctx_lit_eval), ctx=True)
-            self.ent_maxes[split] = self.get_maxes(
-                num_ents, ents=True)
 
             print "Putting Data in Tensors"
             print "Doing {}".format(split)
