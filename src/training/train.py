@@ -264,10 +264,10 @@ def train_class(opt, meta, model, data_loader, gpu=True,
             opt.train.dynamic.epoch, split=eval_split)
 
         # Compute F1 score
-        p = (1.0 * scores["total_precision_macro"] /
-             max(counts["total_precision_macro"], 1))
-        r = (1.0 * scores["total_recall_macro"] /
-             max(counts["total_recall_macro"], 1))
+        p = (1.0 * scores["total_precision_micro"] /
+             max(counts["total_precision_micro"], 1))
+        r = (1.0 * scores["total_recall_micro"] /
+             max(counts["total_recall_micro"], 1))
         f1 = 2 * p * r / max(p + r, 1)
 
         # If score is improved, save model
