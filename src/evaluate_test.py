@@ -10,12 +10,11 @@ from jobman import DD
 
 import torch
 
-import src.train as train
-import src.models as models
-import src.baselines as baselines
-import src.data as data
+import src.training.train as train
+import src.models.baselines as baselines
+import src.data.data as data
 import utils.utils as utils
-import src.config as cfg
+import src.data.config as cfg
 
 # python src/evaluate_class.py $1 $2
 # $1 = {plutchik, maslow, reiss}
@@ -46,12 +45,13 @@ vocab_text = {
 }
 
 splits = ["test"]
+split = splits[0]
 
 config_file = "config/class_config.json"
 config = cfg.read_config(cfg.load_config(config_file))
 
-print("Loading model from: {}".format(model_name))
-loaded_model = data.load_checkpoint(model_name)
+print("Loading model from: {}".format(config.load_model_name))
+loaded_model = data.load_checkpoint(config.load_model_name)
 opt = loaded_model["opt"]
 
 print("Doing task: {}".format(opt.task))
@@ -79,18 +79,17 @@ if config.gpu_mode:
 
 # Set class weight labels
 data_loader.class_weights = {}
-for split in data_loader.labels:
-    cw = 0
-    num = 0
+cw = 0
+num = 0
 
-    # Do weighted cross-entropy based on label weights
-    for key in data_loader.labels[split]:
-        cw += data_loader.labels[split][key].sum(0)
-        num += data_loader.labels[split][key].size(0)
-    cw /= num
-    cw = 1 - torch.exp(-torch.sqrt(cw))
+# Do weighted cross-entropy based on label weights
+for key in data_loader.labels[split]:
+    cw += data_loader.labels[split][key].sum(0)
+    num += data_loader.labels[split][key].size(0)
+cw /= num
+cw = 1 - torch.exp(-torch.sqrt(cw))
 
-    data_loader.class_weights[split] = cw
+data_loader.class_weights[split] = cw
 
 # Build Model
 print("Building Model")
@@ -114,11 +113,8 @@ if config.gpu_mode:
             data_loader.class_weights[split].cuda(
                 cfg.device)
 
-    print("Data to gpu took {} s".format(
-        time.time() - start))
     model.cuda(cfg.device)
-    print("Model to gpu took {} s".format(
-        time.time() - start))
+
 
 print("Done.")
 
