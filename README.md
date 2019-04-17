@@ -68,6 +68,14 @@ python src/main_pretrained.py
 ```
 This command will load the configuration settings in the ```config/pretrained_config.json``` file and run a model according to these parameters. The ```src/config.py``` source file explains what each variable in this configuration file does.
 
+## Evaluating a model on the test set
+
+Set the load_model_name value in the ```config/class_config.json``` file. Then run the following command:
+
+```
+python src/evaluate_test.py
+```
+
 # Contact
 
 Feel free to reach out with questions to [antoineb@cs.washington.edu](mailto:antoineb@cs.washington.edu)
