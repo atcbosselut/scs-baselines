@@ -1,5 +1,5 @@
 {
-    "load_model_name": "models/class_motivation_maslow/label_majority/gendec=/classdec=dpt_0.3-vSize_5-hSize_100/enc=dpt_0-hSize_100-pt_glove-ctx_T-kn_100-ks_3,4,5-init_def-model_cnn-iSize_100-vSize_14395/gc_1-seed_123-tr_0.8/0.001_adam_32_1.pickle",
+    "load_model_name": "",
     "gpu_mode": "T",
     "gpu_index": 1,
 
